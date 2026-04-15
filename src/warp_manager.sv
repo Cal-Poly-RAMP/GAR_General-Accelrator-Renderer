@@ -14,8 +14,8 @@
 */
 
 module warp_manager #(
-    parameter THREADS_PER_WARP = 4,
-    parameter THREADS_PER_BLOCK = 8,
+    parameter THREADS_PER_WARP = 2,
+    parameter THREADS_PER_BLOCK = 4,
     parameter WARPS_PER_CORE = 2
     )(
     input wire clk,
@@ -26,15 +26,17 @@ module warp_manager #(
     input wire [1:0] warp_status [WARPS_PER_CORE-1:0],
     output reg [THREADS_PER_WARP-1:0] masks [WARPS_PER_CORE-1:0],
     output reg [3:0] warp_ids [THREADS_PER_BLOCK-1:0],
-    output reg [$clog2(THREADS_PER_BLOCK):0] thread_count,
+    output reg [$clog2(THREADS_PER_BLOCK):0] warp_groups[0:WARPS_PER_CORE-1][0:THREADS_PER_WARP-1],
+    input reg [$clog2(THREADS_PER_BLOCK):0] thread_count,
 
-    output reg done
+    output reg done,
+    output wire [7:0] total_warps
 );
     // Calculate the total number of blocks based on total threads & threads per block
-    wire [7:0] total_warps;
     assign total_warps = (thread_count + THREADS_PER_WARP - 1) / THREADS_PER_WARP;
 
     // Keep track of how many warps have been processed
+    reg done_warps [WARPS_PER_CORE-1:0];
     reg [7:0] warps_dispatched; // What warps have been dispatched
     reg [7:0] warps_done; // How many blocks have finished processing?
     reg start_execution; // EDA: Unimportant hack used because of EDA tooling
@@ -43,17 +45,26 @@ module warp_manager #(
         if (reset) begin
             warps_done <= 0;
             start_execution <=0;
+            done <=0;
             for (int i = 0; i < WARPS_PER_CORE; i++) begin
                 masks[i] <= 4'b1111;
+                done_warps[i] <= 0;
             end
             for (int i = 1; i < THREADS_PER_BLOCK; i++) begin
                     warp_ids[i] <= (THREADS_PER_BLOCK/THREADS_PER_WARP);
+                    
+            end
+            for (int i = 0; i < WARPS_PER_CORE; i++) begin
+                for (int j = 0;  j< THREADS_PER_WARP; j++) begin
+                    warp_groups[i][j] <= 0;
+                end
             end
         end else if (start) begin   
             if (!start_execution) begin 
                 for (int i = 0; i < WARPS_PER_CORE; i++) begin
                     for (int j = 0;  j< THREADS_PER_WARP; j++) begin
                         warp_ids[(THREADS_PER_WARP*i)+j] <= i;
+                        warp_groups[i][j] <= ((THREADS_PER_WARP*i)+j);
                     end
                 end
                 start_execution <=1;
@@ -66,10 +77,11 @@ module warp_manager #(
             * done warps and not blocks and to reorder the curren
             */
             for (int i = 0; i < WARPS_PER_CORE; i++) begin
-                if ((warps_states[i] == 3'b111) && (i < total_warps)) begin
+                if ((warps_states[i] == 3'b111) && (i < total_warps) && (done_warps[i] == 0)) begin
                     // If a core just finished executing it's current block, reset it
                     //warp_
-                    warps_done = warps_done + 1;
+                    warps_done <= warps_done + 1;
+                    done_warps[i] <= 1;
                 end
             end
         end

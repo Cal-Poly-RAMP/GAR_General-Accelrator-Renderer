@@ -8,7 +8,7 @@ async def test_matmul_2x2(dut):
     test_conf = load_json_binary(
         "./tiny-gpu-assembler/asm_build/test_matmul_2x2.json")
 
-    data_memory = await setup_wrap(dut, test_conf, "screen")
+    data_memory = await setup_wrap(dut, test_conf)
 
     verify_matmul(2, test_conf, data_memory)
 
@@ -19,7 +19,7 @@ async def test_matmul_4x4(dut):
     test_conf = load_json_binary(
         "./tiny-gpu-assembler/asm_build/test_matmul_4x4.json")
 
-    data_memory = await setup_wrap(dut, test_conf, "screen")
+    data_memory = await setup_wrap(dut, test_conf)
 
     verify_matmul(4, test_conf, data_memory)
 

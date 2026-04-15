@@ -3,7 +3,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge
 from .memory import Memory
-from .format import format_cycle
+from .format_og import format_cycle
 from .logger import logger
 
 

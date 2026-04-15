@@ -1,7 +1,44 @@
 from typing import List
-from .logger import logger
+import re
 import cocotb
-from cocotb.triggers import Timer, RisingEdge
+from cocotb.triggers import RisingEdge
+from .logger import logger
+
+
+def _read_signal_bits(signal, total_bits: int, field_bits: int, channels: int) -> list[int]:
+    """
+    Read a cocotb signal (packed or unpacked array) and return a list of
+    per-channel integer values, MSB-first (channel 0 = leftmost/highest bits).
+    """
+    try:
+        # Try unpacked array access: signal[i] gives individual elements
+        _ = signal[0]
+        result = []
+        for i in range(channels):
+            raw = str(signal[channels - 1 - i].value)  # HDL arrays: [0] = LSB end
+            clean = re.sub(r'[^01]', '0', raw)
+            result.append(int(clean, 2) if clean else 0)
+        return result
+    except (TypeError, IndexError, AttributeError):
+        # Packed integer signal: one wide bus
+        raw = re.sub(r'[^01]', '0', str(signal.value))
+        raw = raw.zfill(total_bits)
+        return [int(raw[i * field_bits:(i + 1) * field_bits], 2) for i in range(channels)]
+
+
+def _write_signal(signal, values: list[int], field_bits: int, channels: int):
+    """
+    Write per-channel integer values to a cocotb signal (packed or unpacked).
+    """
+    try:
+        _ = signal[0]
+        # Unpacked: assign per-element, channel 0 = highest index in HDL array
+        for i in range(channels):
+            signal[channels - 1 - i].value = values[i]
+    except (TypeError, IndexError, AttributeError):
+        # Packed: join into one integer
+        packed = int(''.join(format(v, f'0{field_bits}b') for v in values), 2)
+        signal.value = packed
 
 
 class Memory:
@@ -9,118 +46,64 @@ class Memory:
         self.dut = dut
         self.addr_bits = addr_bits
         self.data_bits = data_bits
-        self.memory = [0] * (2**addr_bits)
+        self.memory = [0] * (2 ** addr_bits)
         self.channels = channels
         self.name = name
         self.delay = delay
 
-        self.mem_read_valid = getattr(dut, f"{name}_mem_read_valid")
+        self.mem_read_valid   = getattr(dut, f"{name}_mem_read_valid")
         self.mem_read_address = getattr(dut, f"{name}_mem_read_address")
-        self.mem_read_ready = getattr(dut, f"{name}_mem_read_ready")
-        self.mem_read_data = getattr(dut, f"{name}_mem_read_data")
+        self.mem_read_ready   = getattr(dut, f"{name}_mem_read_ready")
+        self.mem_read_data    = getattr(dut, f"{name}_mem_read_data")
 
         if name != "program":
-            self.mem_write_valid = getattr(dut, f"{name}_mem_write_valid")
+            self.mem_write_valid   = getattr(dut, f"{name}_mem_write_valid")
             self.mem_write_address = getattr(dut, f"{name}_mem_write_address")
-            self.mem_write_data = getattr(dut, f"{name}_mem_write_data")
-            self.mem_write_ready = getattr(dut, f"{name}_mem_write_ready")
+            self.mem_write_data    = getattr(dut, f"{name}_mem_write_data")
+            self.mem_write_ready   = getattr(dut, f"{name}_mem_write_ready")
 
-        # Add internal state for read and write delays
-        self.read_delay_counters = [0] * self.channels
+        self.read_delay_counters  = [0] * self.channels
         self.write_delay_counters = [0] * self.channels
 
     async def run(self):
         while True:
             await RisingEdge(self.dut.clk)
 
-            # Read handling with 2-cycle delay
-            # print(f"skibidi_toilet {self.mem_read_valid.value}")
-            # print(f"skibidi_toilet2 {self.mem_read_address.value}")
-            mem_read_valid = [
-                int(str(self.mem_read_valid.value)[i:i+1], 2)
-                for i in range(self.channels)
-            ]
+            c = self.channels
 
-            mem_read_address = [int(str(addr), 2)
-                                for addr in self.mem_read_address.value]
+            # --- READ side ---
+            mem_read_valid   = _read_signal_bits(self.mem_read_valid,   c,              1,              c)
+            mem_read_address = _read_signal_bits(self.mem_read_address, c*self.addr_bits, self.addr_bits, c)
 
-            # print(f"skibidi_toilet2converted {mem_read_address}")
+            mem_read_ready = [0] * c
+            mem_read_data  = [0] * c
 
-            mem_read_ready = [0] * self.channels
-            mem_read_data = [0] * self.channels
-
-            for i in range(self.channels):
-                if self.delay == 0 and mem_read_valid[i]:
-                    # if no delay
-                    mem_read_data[i] = self.memory[mem_read_address[i]]
+            for i in range(c):
+                if mem_read_valid[i] == 1:
+                    addr = mem_read_address[i]
+                    if addr < len(self.memory):
+                        mem_read_data[i]  = self.memory[addr]
                     mem_read_ready[i] = 1
-                elif self.delay != 0 and mem_read_valid[i]:
-                    # if delay
-                    if self.read_delay_counters[i] == 0:
-                        # Start the delay counter
-                        self.read_delay_counters[i] = self.delay
-                    elif self.read_delay_counters[i] > 1:
-                        # Decrement the delay counter
-                        self.read_delay_counters[i] -= 1
-                    else:
-                        # Perform the read after 2 cycles
-                        mem_read_data[i] = self.memory[mem_read_address[i]]
-                        mem_read_ready[i] = 1
-                        self.read_delay_counters[i] = 0
-                else:
-                    self.read_delay_counters[i] = 0
 
-            for i in range(self.channels):
-                self.mem_read_data[i].value = mem_read_data[i]
-                self.mem_read_ready[i].value = mem_read_ready[i]
+            _write_signal(self.mem_read_data,  mem_read_data,  self.data_bits, c)
+            _write_signal(self.mem_read_ready, mem_read_ready, 1,              c)
 
-            # self.mem_read_data.value = int(
-            #    ''.join(format(d, f'0{self.data_bits}b') for d in mem_read_data), 2)
-            # self.mem_read_ready.value = int(
-            #    ''.join(format(r, '01b') for r in mem_read_ready), 2)
-
-            # Write handling with 2-cycle delay
+            # --- WRITE side ---
             if self.name != "program":
-                mem_write_valid = [
-                    int(str(self.mem_write_valid.value)[i:i+1], 2)
-                    for i in range(self.channels)
-                ]
+                mem_write_valid   = _read_signal_bits(self.mem_write_valid,   c,               1,              c)
+                mem_write_address = _read_signal_bits(self.mem_write_address, c*self.addr_bits, self.addr_bits, c)
+                mem_write_data    = _read_signal_bits(self.mem_write_data,    c*self.data_bits, self.data_bits, c)
 
-                mem_write_address = [int(str(addr), 2)
-                                     for addr in self.mem_write_address.value]
+                mem_write_ready = [0] * c
 
-                mem_write_data = [int(str(data), 2)
-                                  for data in self.mem_write_data.value]
-
-                mem_write_ready = [0] * self.channels
-
-                for i in range(self.channels):
-                    if self.delay == 0 and mem_write_valid[i]:
-                        self.memory[mem_write_address[i]] = mem_write_data[i]
+                for i in range(c):
+                    if mem_write_valid[i] == 1:
+                        addr = mem_write_address[i]
+                        if addr < len(self.memory):
+                            self.memory[addr] = mem_write_data[i]
                         mem_write_ready[i] = 1
-                    if self.delay != 0 and mem_write_valid[i]:
-                        if self.write_delay_counters[i] == 0:
-                            # Start the delay counter
-                            self.write_delay_counters[i] = self.delay
-                        elif self.write_delay_counters[i] > 1:
-                            # Decrement the delay counter
-                            self.write_delay_counters[i] -= 1
-                        else:
-                            # Perform the write after n cycles
-                            self.memory[mem_write_address[i]
-                                        ] = mem_write_data[i]
-                            mem_write_ready[i] = 1
-                            self.write_delay_counters[i] = 0
-                    else:
-                        self.write_delay_counters[i] = 0
 
-                self.mem_write_ready.value = int(
-                    ''.join(format(w, '01b') for w in mem_write_ready), 2)
-
-
-# Functions for testbench init and display, instantaneous
-#########################################################
-
+                _write_signal(self.mem_write_ready, mem_write_ready, 1, c)
 
     def write(self, address, data):
         if address < len(self.memory):
@@ -133,13 +116,10 @@ class Memory:
     def display(self, rows, decimal=True):
         logger.info("\n")
         logger.info(f"{self.name.upper()} MEMORY")
-
         table_size = (8 * 2) + 3
         logger.info("+" + "-" * (table_size - 3) + "+")
-
         header = "| Addr | Data "
         logger.info(header + " " * (table_size - len(header) - 1) + "|")
-
         logger.info("+" + "-" * (table_size - 3) + "+")
         for i, data in enumerate(self.memory):
             if i < rows:

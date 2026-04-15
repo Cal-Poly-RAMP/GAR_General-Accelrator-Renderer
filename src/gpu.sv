@@ -16,7 +16,7 @@ module gpu #(
     parameter PROGRAM_MEM_NUM_CHANNELS = 1,  // Number of concurrent channels for sending requests to program memory
     parameter NUM_CORES = 2,                 // Number of cores to include in this GPU
     parameter WARPS_PER_CORE = 2,
-    parameter THREADS_PER_WARP = 4,
+    parameter THREADS_PER_WARP = 2,
     parameter THREADS_PER_BLOCK = 4          // Number of threads to handle per block (determines the compute resources of each core)
 ) (
     input wire clk,
@@ -57,7 +57,7 @@ module gpu #(
     reg [$clog2(THREADS_PER_BLOCK):0] core_thread_count [NUM_CORES-1:0];
 
     // LSU <> Data Memory Controller Channels
-    localparam NUM_LSUS = NUM_CORES * THREADS_PER_BLOCK;
+    localparam NUM_LSUS = NUM_CORES * THREADS_PER_WARP;
     reg [NUM_LSUS-1:0] lsu_read_valid;
     reg [DATA_MEM_ADDR_BITS-1:0] lsu_read_address [NUM_LSUS-1:0];
     reg [NUM_LSUS-1:0] lsu_read_ready;
@@ -128,11 +128,21 @@ module gpu #(
         .consumer_read_address(fetcher_read_address),
         .consumer_read_ready(fetcher_read_ready),
         .consumer_read_data(fetcher_read_data),
+        // Assumed to be disconnected by module, but hardware is present
+        .consumer_write_valid(),
+        .consumer_write_address(),
+        .consumer_write_data(),
+        .consumer_write_ready(),
+        .mem_write_valid(),
+        .mem_write_address(),
+        .mem_write_data(),
+        .mem_write_ready(),
 
         .mem_read_valid(program_mem_read_valid),
         .mem_read_address(program_mem_read_address),
         .mem_read_ready(program_mem_read_ready),
-        .mem_read_data(program_mem_read_data),
+        .mem_read_data(program_mem_read_data)
+        
     );
 
     // Dispatcher
@@ -158,19 +168,19 @@ module gpu #(
         for (i = 0; i < NUM_CORES; i = i + 1) begin : cores
             // EDA: We create separate signals here to pass to cores because of a requirement
             // by the OpenLane EDA flow (uses Verilog 2005) that prevents slicing the top-level signals
-            reg [THREADS_PER_BLOCK-1:0] core_lsu_read_valid;
-            reg [DATA_MEM_ADDR_BITS-1:0] core_lsu_read_address [THREADS_PER_BLOCK-1:0];
-            reg [THREADS_PER_BLOCK-1:0] core_lsu_read_ready;
-            reg [DATA_MEM_DATA_BITS-1:0] core_lsu_read_data [THREADS_PER_BLOCK-1:0];
-            reg [THREADS_PER_BLOCK-1:0] core_lsu_write_valid;
-            reg [DATA_MEM_ADDR_BITS-1:0] core_lsu_write_address [THREADS_PER_BLOCK-1:0];
-            reg [DATA_MEM_DATA_BITS-1:0] core_lsu_write_data [THREADS_PER_BLOCK-1:0];
-            reg [THREADS_PER_BLOCK-1:0] core_lsu_write_ready;
+            reg [THREADS_PER_WARP-1:0] core_lsu_read_valid;
+            reg [DATA_MEM_ADDR_BITS-1:0] core_lsu_read_address [THREADS_PER_WARP-1:0];
+            reg [THREADS_PER_WARP-1:0] core_lsu_read_ready;
+            reg [DATA_MEM_DATA_BITS-1:0] core_lsu_read_data [THREADS_PER_WARP-1:0];
+            reg [THREADS_PER_WARP-1:0] core_lsu_write_valid;
+            reg [DATA_MEM_ADDR_BITS-1:0] core_lsu_write_address [THREADS_PER_WARP-1:0];
+            reg [DATA_MEM_DATA_BITS-1:0] core_lsu_write_data [THREADS_PER_WARP-1:0];
+            reg [THREADS_PER_WARP-1:0] core_lsu_write_ready;
 
             // Pass through signals between LSUs and data memory controller
             genvar j;
-            for (j = 0; j < THREADS_PER_BLOCK; j = j + 1) begin
-                localparam lsu_index = i * THREADS_PER_BLOCK + j;
+            for (j = 0; j < THREADS_PER_WARP; j = j + 1) begin
+                localparam lsu_index = i * THREADS_PER_WARP + j;
                 always @(posedge clk) begin 
                     lsu_read_valid[lsu_index] <= core_lsu_read_valid[j];
                     lsu_read_address[lsu_index] <= core_lsu_read_address[j];
@@ -218,4 +228,12 @@ module gpu #(
             );
         end
     endgenerate
+    
+    /////////////////////////////////////////
+    // Dump waveform to GTK Wave readable format
+    /////////////////////////////////////////
+    initial begin
+        $dumpfile("build/gpu.vcd"); 
+        $dumpvars(0, gpu);
+    end
 endmodule

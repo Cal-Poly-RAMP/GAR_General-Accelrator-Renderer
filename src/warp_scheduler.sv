@@ -14,9 +14,9 @@
 // > Technically, different instructions can branch to different PCs, requiring "branch divergence." In
 //   this minimal implementation, we assume no branch divergence (naive approach for simplicity)
 module warp_scheduler #(
-    parameter THREADS_PER_BLOCK = 8,
-    parameter THREADS_PER_WARP = 4,
-    parameter WARPS_PER_CORE = 2,
+    parameter THREADS_PER_BLOCK = 4,
+    parameter THREADS_PER_WARP = 2,
+    parameter WARPS_PER_CORE = 2
 ) (
     input wire clk,
     input wire reset,
@@ -30,19 +30,20 @@ module warp_scheduler #(
 
     // Memory Access State
     input reg [2:0] fetcher_state,
-    input reg [1:0] lsu_state [THREADS_PER_BLOCK-1:0],
+    input reg [1:0] lsu_state [THREADS_PER_WARP-1:0],
 
     //TODO: warp output controlls, need to be able send out warp masks
     // needs to get back when a warp is finished executing in the pipeline
     // need to send out warp groups for threads
     //Warp controlls
     input reg [$clog2(WARPS_PER_CORE):0]warp_index,
-    output wire [$clog2(WARPS_PER_CORE):0]warp_groups[THREADS_PER_BLOCK-1:0],
+    output wire [3:0] warp_ids [THREADS_PER_BLOCK-1:0],
+    output wire [$clog2(THREADS_PER_BLOCK):0] warp_groups[0:WARPS_PER_CORE-1][0:THREADS_PER_WARP-1],
     output reg [THREADS_PER_WARP-1:0] masks [WARPS_PER_CORE-1:0],
 
     // Current & Next PC
     output reg [7:0] current_pc,
-    input reg [7:0] next_pc [THREADS_PER_BLOCK-1:0],
+    input reg [7:0] next_pc [THREADS_PER_WARP-1:0],
 
     // Execution State
     output reg [2:0] core_state,
@@ -52,13 +53,15 @@ module warp_scheduler #(
     //warp meta data
     reg [7:0] warps_states [WARPS_PER_CORE-1:0];
     reg [1:0] warp_status [WARPS_PER_CORE-1:0];
+    reg [WARPS_PER_CORE-1:0] warps_ready;
     reg [7:0] warp_pcs[WARPS_PER_CORE-1:0];
     reg [$clog2(WARPS_PER_CORE):0] next_warp;
     reg [WARPS_PER_CORE:0] start_warp;
+    wire [7:0] total_warps;
 
     localparam 
         READY = 2'b00, // Ready to be swaped to
-        STALL = 3'b01,       // Warp is currently Stalled
+        STALL = 2'b01,       // Warp is currently Stalled
         MASKED = 2'b10,      // The warp is currently diverged and is masked
         SCHEDULED = 2'b11,     // There is no warp
         IDLE = 3'b000, // Waiting to start
@@ -82,18 +85,24 @@ module warp_scheduler #(
         .warps_states(warps_states),
         .warp_status(warp_status),
         .done(done),
-        .warp_ids(warp_groups),
+        .warp_ids(warp_ids),
+        .warp_groups(warp_groups),
         .masks(masks),
-        .thread_count(thread_count)
+        .thread_count(thread_count),
+        .total_warps(total_warps)
     );
 
 
     always @(posedge clk) begin 
         if (reset) begin
-            current_pc <= 0;
+            for (int i = 0 ; i< WARPS_PER_CORE; i++)begin
+                warp_pcs[i] <= 7'b0;
+                warps_states[i] <= FETCH;
+                warp_status[i] <= READY;
+                warps_ready[i] <= 1;
+            end
+            next_warp <= 0;
             core_state <= IDLE;
-            done <= 0;
-            warp <=0;
         end else begin 
             // schedule warps, these warps are sent to the dispatcher that navigates them to the right 
             // compute path. Options Round robin schedule a differnet warp every clk cycle, or context switching 
@@ -133,8 +142,12 @@ module warp_scheduler #(
                 IDLE: begin
                     // Here after reset (before kernel is launched, or after previous block has been processed)
                     if (start) begin 
-                        // Start by fetching the next instruction for this block based on PC
-                        core_state <= FETCH;
+                        warp <= 0;
+                        current_pc <=warp_pcs[0];
+                        core_state <= warps_states[0];
+                        warp_status[0] <= STALL;
+                        warps_ready[0] <= 0;
+                        next_warp <= (next_warp == total_warps) ? 0 : next_warp+1;
                     end
                 end
                 FETCH: begin 
@@ -172,7 +185,7 @@ module warp_scheduler #(
                 WAIT: begin
                     // Wait for all LSUs to finish their request before continuing
                     reg any_lsu_waiting = 1'b0;
-                    for (int i = 0; i < THREADS_PER_BLOCK; i++) begin
+                    for (int i = 0; i < THREADS_PER_WARP; i++) begin
                         // Make sure no lsu_state = REQUESTING or WAITING
                         if (lsu_state[i] == 2'b01 || lsu_state[i] == 2'b10) begin
                             any_lsu_waiting = 1'b1;
@@ -192,20 +205,25 @@ module warp_scheduler #(
                 UPDATE: begin 
                     if (decoded_ret) begin 
                         // If we reach a RET instruction, this block is done executing
-                        warps_states[warp_index] <= DONE;
+                        warps_states[warp] <= DONE;
+                        warps_ready[warp] <= 0;
                     end else begin
                         // TODO: Branch divergence. For now assume all next_pc converge
-                        if (warp_status[next_warp] == READY)begin
-                            warp <= next_warp;
-                            current_pc <=warp_pcs[next_warp];
-                            core_state <= warps_states[next_warp];
-                            warp_status[next_warp] <= STALL;
-                            next_warp <= next_warp+1;
+                        warp_status[warp] <= READY;
+                        warp_pcs[warp] <= next_pc[0];
+                        warps_ready[warp] <= 1;
+                        warps_states[warp] <= FETCH;
+                    end
+                    warps_ready <= (warps_ready << 1) | (warps_ready >> (WARPS_PER_CORE-1));       //rsl
+                    // Update is synchronous so we move on after one cycle
+                    for (int i = 0; i < WARPS_PER_CORE; i++)begin
+                            if ((warp_status[i] == READY) && (warps_ready >> i == 1'b1))begin
+                            warp <= i;
+                            current_pc <=warp_pcs[i];
+                            core_state <= warps_states[i];
+                            warp_status[i] <= STALL;
+                            // next_warp <= (next_warp == total_warps-1) ? 0 : next_warp+1;
                         end
-                        warp_status[warp_index] <= READY;
-                        warp_pcs[warp_index] <= next_pc[0];
-                        // Update is synchronous so we move on after one cycle
-                        warps_states[warp_index] <= FETCH;
                     end
                 end
                 DONE: begin 

@@ -7,7 +7,7 @@ async def test_matadd_8_threads(dut):
     test_conf = load_json_binary(
         "./tiny-gpu-assembler/asm_build/test_matadd_8_threads.json")
 
-    data_memory = await setup_wrap(dut, test_conf, "steaae")
+    data_memory = await setup_wrap(dut, test_conf)
 
     verify_matadd(test_conf, data_memory)
 
@@ -17,7 +17,7 @@ async def test_matadd_32_threads(dut):
     test_conf = load_json_binary(
         "./tiny-gpu-assembler/asm_build/test_matadd_32_threads.json")
 
-    data_memory = await setup_wrap(dut, test_conf, "steaae")
+    data_memory = await setup_wrap(dut, test_conf)
 
     verify_matadd(test_conf, data_memory)
 

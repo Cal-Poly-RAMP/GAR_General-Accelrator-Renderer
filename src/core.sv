@@ -11,8 +11,8 @@ module core #(
     parameter PROGRAM_MEM_ADDR_BITS = 8,
     parameter PROGRAM_MEM_DATA_BITS = 16,
     parameter WARPS_PER_CORE = 2,
-    parameter THREADS_PER_WARP = 4,
-    parameter THREADS_PER_BLOCK = 8
+    parameter THREADS_PER_WARP = 2,
+    parameter THREADS_PER_BLOCK = 4
 ) (
     input wire clk,
     input wire reset,
@@ -32,14 +32,14 @@ module core #(
     input reg [PROGRAM_MEM_DATA_BITS-1:0] program_mem_read_data,
 
     // Data Memory
-    output reg [THREADS_PER_BLOCK-1:0] data_mem_read_valid,
-    output reg [DATA_MEM_ADDR_BITS-1:0] data_mem_read_address [THREADS_PER_BLOCK-1:0],
-    input reg [THREADS_PER_BLOCK-1:0] data_mem_read_ready,
-    input reg [DATA_MEM_DATA_BITS-1:0] data_mem_read_data [THREADS_PER_BLOCK-1:0],
-    output reg [THREADS_PER_BLOCK-1:0] data_mem_write_valid,
-    output reg [DATA_MEM_ADDR_BITS-1:0] data_mem_write_address [THREADS_PER_BLOCK-1:0],
-    output reg [DATA_MEM_DATA_BITS-1:0] data_mem_write_data [THREADS_PER_BLOCK-1:0],
-    input reg [THREADS_PER_BLOCK-1:0] data_mem_write_ready
+    output reg [THREADS_PER_WARP-1:0] data_mem_read_valid,
+    output reg [DATA_MEM_ADDR_BITS-1:0] data_mem_read_address [THREADS_PER_WARP-1:0],
+    input reg [THREADS_PER_WARP-1:0] data_mem_read_ready,
+    input reg [DATA_MEM_DATA_BITS-1:0] data_mem_read_data [THREADS_PER_WARP-1:0],
+    output reg [THREADS_PER_WARP-1:0] data_mem_write_valid,
+    output reg [DATA_MEM_ADDR_BITS-1:0] data_mem_write_address [THREADS_PER_WARP-1:0],
+    output reg [DATA_MEM_DATA_BITS-1:0] data_mem_write_data [THREADS_PER_WARP-1:0],
+    input reg [THREADS_PER_WARP-1:0] data_mem_write_ready
 );
     // State
     reg [2:0] core_state;
@@ -48,18 +48,28 @@ module core #(
 
     //warp signals
     reg [$clog2(WARPS_PER_CORE):0]warp_index;
-    wire [$clog2(WARPS_PER_CORE):0]warp_groups[THREADS_PER_BLOCK-1:0];
+    wire [3:0] warp_ids [THREADS_PER_BLOCK-1:0];
+    wire [$clog2(THREADS_PER_BLOCK):0] warp_groups[0:WARPS_PER_CORE-1][0:THREADS_PER_WARP-1];
     reg [THREADS_PER_WARP-1:0] masks [WARPS_PER_CORE-1:0];
     reg[3:0] warp;
+    wire [$clog2(THREADS_PER_BLOCK):0] Running_Threads [0:THREADS_PER_WARP-1]; 
+    
+    assign Running_Threads = warp_groups[warp]; 
 
     // Intermediate Signals
     reg [7:0] current_pc;
-    wire [7:0] next_pc[THREADS_PER_BLOCK-1:0];
-    reg [7:0] rs[THREADS_PER_BLOCK-1:0];
-    reg [7:0] rt[THREADS_PER_BLOCK-1:0];
-    reg [1:0] lsu_state[THREADS_PER_BLOCK-1:0];
-    reg [7:0] lsu_out[THREADS_PER_BLOCK-1:0];
-    wire [7:0] alu_out[THREADS_PER_BLOCK-1:0];
+    wire [7:0] next_pc[THREADS_PER_WARP-1:0];
+    reg [1:0] lsu_state[THREADS_PER_WARP-1:0];
+    reg [7:0] rs_regs[0:THREADS_PER_BLOCK-1];
+    reg [7:0] rt_regs[0:THREADS_PER_BLOCK-1];
+    reg [7:0] lsu_out_computes[0:THREADS_PER_WARP-1];
+    reg [7:0] alu_out_computes[0:THREADS_PER_WARP-1];
+
+
+    reg [7:0] rs_computes[0:THREADS_PER_WARP-1];
+    reg [7:0] rt_computes[0:THREADS_PER_WARP-1];
+    reg [7:0] lsu_out_regs[0:THREADS_PER_BLOCK-1];
+    reg [7:0] alu_out_regs[0:THREADS_PER_BLOCK-1];
     
     // Decoded Instruction Signals
     reg [3:0] decoded_rd_address;
@@ -130,6 +140,7 @@ module core #(
         .thread_count(thread_count),
         .fetcher_state(fetcher_state),
         .warp_index(warp_index),
+        .warp_ids(warp_ids),
         .warp_groups(warp_groups),
         .masks(masks),
         .warp(warp),
@@ -143,77 +154,93 @@ module core #(
         .done(done)
     );
 
+    warptothreadbus #(
+        .THREADS_PER_BLOCK(THREADS_PER_BLOCK),
+        .THREADS_PER_WARP(THREADS_PER_WARP),
+        .WARPS_PER_CORE(WARPS_PER_CORE)
+    ) warptothreadbus_instance (
+        .clk(clk),
+        .reset(reset),
+        .warp(warp),
+        .rs_regs(rs_regs),
+        .rt_regs(rt_regs),
+        .lsu_out_computes(lsu_out_computes),
+        .alu_out_computes(alu_out_computes),
+        .Running_Threads(Running_Threads),
+        .rs_computes(rs_computes),
+        .rt_computes(rt_computes),
+        .lsu_out_regs(lsu_out_regs),
+        .alu_out_regs(alu_out_regs)
+    );
+
     // Dedicated ALU, LSU, registers, & PC unit for each thread this core has capacity for
     genvar i;
+    genvar u;
     generate
         for (i = 0; i < THREADS_PER_WARP; i = i + 1) begin : warps
             // ALU
             alu alu_instance (
-                .clk(clk),
-                .reset(reset),
-                .enable(masks[i] == 1),
-                .core_state(core_state),
-                .decoded_alu_arithmetic_mux(decoded_alu_arithmetic_mux),
-                .decoded_alu_output_mux(decoded_alu_output_mux),
-                .rs(rs[i]),
-                .rt(rt[i]),
-                .alu_out(alu_out[i])
-            );
+            .clk(clk),
+            .reset(reset),
+            .enable(masks[warp][i] == 1),
+            .core_state(core_state),
+            .decoded_alu_arithmetic_mux(decoded_alu_arithmetic_mux),
+            .decoded_alu_output_mux(decoded_alu_output_mux),
+            .rs(rs_computes[i]),      // Fixed: was warpgroups[warp][i]
+            .rt(rt_computes[i]),      // Fixed: was warpgroups[warp][i]
+            .alu_out(alu_out_computes[i])
+        );
 
-            // LSU
-            lsu lsu_instance (
-                .clk(clk),
-                .reset(reset),
-                .enable(masks[i] == 1),
-                .core_state(core_state),
-                .decoded_mem_read_enable(decoded_mem_read_enable),
-                .decoded_mem_write_enable(decoded_mem_write_enable),
-                .mem_read_valid(data_mem_read_valid[i]),
-                .mem_read_address(data_mem_read_address[i]),
-                .mem_read_ready(data_mem_read_ready[i]),
-                .mem_read_data(data_mem_read_data[i]),
-                .mem_write_valid(data_mem_write_valid[i]),
-                .mem_write_address(data_mem_write_address[i]),
-                .mem_write_data(data_mem_write_data[i]),
-                .mem_write_ready(data_mem_write_ready[i]),
-                .rs(rs[i]),
-                .rt(rt[i]),
-                .lsu_state(lsu_state[i]),
-                .lsu_out(lsu_out[i])
-            );
-            // Program Counter
-            pc #(
-                .DATA_MEM_DATA_BITS(DATA_MEM_DATA_BITS),
-                .PROGRAM_MEM_ADDR_BITS(PROGRAM_MEM_ADDR_BITS)
-            ) pc_instance (
-                .clk(clk),
-                .reset(reset),
-                .enable(masks[i] == 1),
-                .core_state(core_state),
-                .decoded_nzp(decoded_nzp),
-                .decoded_immediate(decoded_immediate),
-                .decoded_nzp_write_enable(decoded_nzp_write_enable),
-                .decoded_pc_mux(decoded_pc_mux),
-                .alu_out(alu_out[i]),
-                .current_pc(current_pc),
-                .next_pc(next_pc[i])
-            );
+        // LSU
+        lsu lsu_instance (
+            .clk(clk),
+            .reset(reset),
+            .enable(masks[warp][i] == 1),
+            .core_state(core_state),
+            .decoded_mem_read_enable(decoded_mem_read_enable),
+            .decoded_mem_write_enable(decoded_mem_write_enable),
+            .mem_read_valid(data_mem_read_valid[i]),      // Fixed: was [i]
+            .mem_read_address(data_mem_read_address[i]),
+            .mem_read_ready(data_mem_read_ready[i]),
+            .mem_read_data(data_mem_read_data[i]),
+            .mem_write_valid(data_mem_write_valid[i]),
+            .mem_write_address(data_mem_write_address[i]),
+            .mem_write_data(data_mem_write_data[i]),
+            .mem_write_ready(data_mem_write_ready[i]),
+            .rs(rs_computes[i]),      // Fixed: was warpgroups[warp][i]
+            .rt(rt_computes[i]),
+            .lsu_state(lsu_state[i]),            // Fixed: was warpgroups[warp][i], should be local index i
+            .lsu_out(lsu_out_computes[i])
+        );
+
+        // Program Counter
+        pc #(
+            .DATA_MEM_DATA_BITS(DATA_MEM_DATA_BITS),
+            .PROGRAM_MEM_ADDR_BITS(PROGRAM_MEM_ADDR_BITS)
+        ) pc_instance (
+            .clk(clk),
+            .reset(reset),
+            .enable(masks[warp][i] == 1),
+            .core_state(core_state),
+            .decoded_nzp(decoded_nzp),
+            .decoded_immediate(decoded_immediate),
+            .decoded_nzp_write_enable(decoded_nzp_write_enable),
+            .decoded_pc_mux(decoded_pc_mux),
+            .alu_out(alu_out_computes[i]),    // Fixed: was warpgroups[warp][i]
+            .current_pc(current_pc),
+            .next_pc(next_pc[i])                         // next_pc is sized [THREADS_PER_WARP-1:0], so local index i is correct
+        );
         end
-    endgenerate
-
-    // Dedicated ALU, LSU, registers, & PC unit for each thread this core has capacity for
-    genvar i;
-    generate
-        for (i = 0; i < THREADS_PER_BLOCK; i = i + 1) begin : threads
+        for (u = 0; u < THREADS_PER_BLOCK; u = u + 1) begin : threads
             // Register File
             registers #(
                 .THREADS_PER_BLOCK(THREADS_PER_BLOCK),
-                .THREAD_ID(i),
-                .DATA_BITS(DATA_MEM_DATA_BITS),
+                .THREAD_ID(u),
+                .DATA_BITS(DATA_MEM_DATA_BITS)
             ) register_instance (
                 .clk(clk),
                 .reset(reset),
-                .enable((i < thread_count) && (warp_groups[i] == warp)),
+                .enable(u < thread_count &&  (Running_Threads[0] == u || Running_Threads[1] == u)), // Only enable registers for active threads in the block
                 .block_id(block_id),
                 .core_state(core_state),
                 .decoded_reg_write_enable(decoded_reg_write_enable),
@@ -222,10 +249,10 @@ module core #(
                 .decoded_rs_address(decoded_rs_address),
                 .decoded_rt_address(decoded_rt_address),
                 .decoded_immediate(decoded_immediate),
-                .alu_out(alu_out[i]),
-                .lsu_out(lsu_out[i]),
-                .rs(rs[i]),
-                .rt(rt[i])
+                .alu_out(alu_out_regs[u]),
+                .lsu_out(lsu_out_regs[u]),
+                .rs(rs_regs[u]),
+                .rt(rt_regs[u])
             );
         end
     endgenerate
