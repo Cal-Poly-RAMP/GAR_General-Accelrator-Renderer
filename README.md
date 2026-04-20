@@ -24,29 +24,21 @@ Built with <15 files of fully documented Verilog, complete documentation on arch
 
 # Overview
 
-If you want to learn how a CPU works all the way from architecture to control signals, there are many resources online to help you.
+This project is built on top of the [tiny-gpu] by adam, it is important to go through his read me to understand the fondation of our project.
 
-GPUs are not the same.
+The goal of this project is to help introduce cal poly CARP student to GPU architecture with getting hands on expence with building, designing and verification on a GPU.
 
-Because the GPU market is so competitive, low-level technical details for all modern architectures remain proprietary.
+Our current project is expanding the ISA to acomidate RISC-V and to be able to take advantage of the compiler built by the vortex team at georgia tech.
 
-While there are lots of resources to learn about GPU programming, there's almost nothing available to learn about how GPU's work at a hardware level.
-
-The best option is to go through open-source GPU implementations like [Miaow](https://github.com/VerticalResearchGroup/miaow) and [VeriGPU](https://github.com/hughperkins/VeriGPU/tree/main) and try to figure out what's going on. This is challenging since these projects aim at being feature complete and functional, so they're quite complex.
-
-This is why I built `tiny-gpu`!
-
-## What is tiny-gpu?
+## Whats New in GAR?
 
 > [!IMPORTANT]
 >
-> **tiny-gpu** is a minimal GPU implementation optimized for learning about how GPUs work from the ground up.
+> **Current GAR expantions** 
 >
-> Specifically, with the trend toward general-purpose GPUs (GPGPUs) and ML-accelerators like Google's TPU, tiny-gpu focuses on highlighting the general principles of all of these architectures, rather than on the details of graphics-specific hardware.
+> Warp schedular, this adition allows for a paramatraizable warp size that is composed from the thread block that is scheduled onto the compute core, but also has warps scheduled in a round robin fasion
 
-With this motivation in mind, we can simplify GPUs by cutting out the majority of complexity involved with building a production-grade graphics card, and focus on the core elements that are critical to all of these modern hardware accelerators.
 
-This project is primarily focused on exploring:
 
 1. **Architecture** - What does the architecture of a GPU look like? What are the most important elements?
 2. **Parallelization** - How is the SIMD progamming model implemented in hardware?
@@ -63,16 +55,7 @@ After understanding the fundamentals laid out in this project, you can checkout 
 
 ## GPU
 
-tiny-gpu is built to execute a single kernel at a time.
-
-In order to launch a kernel, we need to do the following:
-
-1. Load global program memory with the kernel code
-2. Load data memory with the necessary data
-3. Specify the number of threads to launch in the device control register
-4. Launch the kernel by setting the start signal to high.
-
-The GPU itself consists of the following units:
+For the current GAR project these are the changes that need to be made to each of the following modules
 
 1. Device control register
 2. Dispatcher
@@ -82,119 +65,65 @@ The GPU itself consists of the following units:
 
 ### Device Control Register
 
-The device control register usually stores metadata specifying how kernels should be executed on the GPU.
-
-In this case, the device control register just stores the `thread_count` - the total number of threads to launch for the active kernel.
+The device control register need to be changed to store metadata specifying how kernels should be executed on the GPU.
 
 ### Dispatcher
 
-Once a kernel is launched, the dispatcher is the unit that actually manages the distribution of threads to different compute cores.
-
-The dispatcher organizes threads into groups that can be executed in parallel on a single core called **blocks** and sends these blocks off to be processed by available cores.
-
-Once all blocks have been processed, the dispatcher reports back that the kernel execution is done.
+None
 
 ## Memory
 
-The GPU is built to interface with an external global memory. Here, data memory and program memory are separated out for simplicity.
+TBD
 
 ### Global Memory
 
-tiny-gpu data memory has the following specifications:
-
-- 8 bit addressability (256 total rows of data memory)
-- 8 bit data (stores values of <256 for each row)
-
-tiny-gpu program memory has the following specifications:
-
-- 8 bit addressability (256 rows of program memory)
-- 16 bit data (each instruction is 16 bits as specified by the ISA)
+TBD
 
 ### Memory Controllers
 
-Global memory has fixed read/write bandwidth, but there may be far more incoming requests across all cores to access data from memory than the external memory is actually able to handle.
-
-The memory controllers keep track of all the outgoing requests to memory from the compute cores, throttle requests based on actual external memory bandwidth, and relay responses from external memory back to the proper resources.
-
-Each memory controller has a fixed number of channels based on the bandwidth of global memory.
+None
 
 ### Cache (WIP)
 
-The same data is often requested from global memory by multiple cores. Constantly access global memory repeatedly is expensive, and since the data has already been fetched once, it would be more efficient to store it on device in SRAM to be retrieved much quicker on later requests.
-
-This is exactly what the cache is used for. Data retrieved from external memory is stored in cache and can be retrieved from there on later requests, freeing up memory bandwidth to be used for new data.
+None
 
 ## Core
 
-Each core has a number of compute resources, often built around a certain number of threads it can support. In order to maximize parallelization, these resources need to be managed optimally to maximize resource utilization.
+Changes
 
-In this simplified GPU, each core processed one **block** at a time, and for each thread in a block, the core has a dedicated ALU, LSU, PC, and register file. Managing the execution of thread instructions on these resources is one of the most challening problems in GPUs.
+### Warp Scheduler
 
-### Scheduler
-
-Each core has a single scheduler that manages the execution of threads.
-
-The tiny-gpu scheduler executes instructions for a single block to completion before picking up a new block, and it executes instructions for all threads in-sync and sequentially.
-
-In more advanced schedulers, techniques like **pipelining** are used to stream the execution of multiple instructions subsequent instructions to maximize resource utilization before previous instructions are fully complete. Additionally, **warp scheduling** can be use to execute multiple batches of threads within a block in parallel.
-
-The main constraint the scheduler has to work around is the latency associated with loading & storing data from global memory. While most instructions can be executed synchronously, these load-store operations are asynchronous, meaning the rest of the instruction execution has to be built around these long wait times.
+None
 
 ### Fetcher
 
-Asynchronously fetches the instruction at the current program counter from program memory (most should actually be fetching from cache after a single block is executed).
+None
 
 ### Decoder
 
-Decodes the fetched instruction into control signals for thread execution.
+Changed to properly decode the RISC-V isa 
 
 ### Register Files
 
-Each thread has it's own dedicated set of register files. The register files hold the data that each thread is performing computations on, which enables the same-instruction multiple-data (SIMD) pattern.
-
-Importantly, each register file contains a few read-only registers holding data about the current block & thread being executed locally, enabling kernels to be executed with different data based on the local thread id.
+None
 
 ### ALUs
 
-Dedicated arithmetic-logic unit for each thread to perform computations. Handles the `ADD`, `SUB`, `MUL`, `DIV` arithmetic instructions.
-
-Also handles the `CMP` comparison instruction which actually outputs whether the result of the difference between two registers is negative, zero or positive - and stores the result in the `NZP` register in the PC unit.
+Needs to be expanded to compute a larger set of the RISC-V isa
 
 ### LSUs
 
-Dedicated load-store unit for each thread to access global data memory.
-
-Handles the `LDR` & `STR` instructions - and handles async wait times for memory requests to be processed and relayed by the memory controller.
+Expand the ISA it incorrpetate the more complete RISC-V isa
 
 ### PCs
 
-Dedicated program-counter for each unit to determine the next instructions to execute on each thread.
-
-By default, the PC increments by 1 after every instruction.
-
-With the `BRnzp` instruction, the NZP register checks to see if the NZP register (set by a previous `CMP` instruction) matches some case - and if it does, it will branch to a specific line of program memory. _This is how loops and conditionals are implemented._
-
-Since threads are processed in parallel, tiny-gpu assumes that all threads "converge" to the same program counter after each instruction - which is a naive assumption for the sake of simplicity.
-
-In real GPUs, individual threads can branch to different PCs, causing **branch divergence** where a group of threads threads initially being processed together has to split out into separate execution.
+Expand to compute more branching instructions 
 
 # ISA
 
-![ISA](/docs/images/isa.png)
+![ISA](/docs/images/riscv_isa.png)
 
-tiny-gpu implements a simple 11 instruction ISA built to enable simple kernels for proof-of-concept like matrix addition & matrix multiplication (implementation further down on this page).
 
-For these purposes, it supports the following instructions:
-
-- `BRnzp` - Branch instruction to jump to another line of program memory if the NZP register matches the `nzp` condition in the instruction.
-- `CMP` - Compare the value of two registers and store the result in the NZP register to use for a later `BRnzp` instruction.
-- `ADD`, `SUB`, `MUL`, `DIV` - Basic arithmetic operations to enable tensor math.
-- `LDR` - Load data from global memory.
-- `STR` - Store data into global memory.
-- `CONST` - Load a constant value into a register.
-- `RET` - Signal that the current thread has reached the end of execution.
-
-Each register is specified by 4 bits, meaning that there are 16 total registers. The first 13 register `R0` - `R12` are free registers that support read/write. The last 3 registers are special read-only registers used to supply the `%blockIdx`, `%blockDim`, and `%threadIdx` critical to SIMD.
 
 # Execution
 
@@ -331,9 +260,7 @@ Below is a sample of the execution traces, showing on each cycle the execution o
 
 **For anyone trying to run the simulation or play with this repo, please feel free to DM me on [twitter](https://twitter.com/majmudaradam) if you run into any issues - I want you to get this running!**
 
-# Advanced Functionality
-
-For the sake of simplicity, there were many additional features implemented in modern GPUs that heavily improve performance & functionality that tiny-gpu omits. We'll discuss some of those most critical features in this section.
+# Future CARP GAR projects 
 
 ### Multi-layered Cache & Shared Memory
 
@@ -359,11 +286,6 @@ Modern GPUs use **pipelining** to stream execution of multiple sequential instru
 
 This helps to maximize resource utilization within cores as resources are not sitting idle while waiting (ex: during async memory requests).
 
-### Warp Scheduling
-
-Another strategy used to maximize resource utilization on course is **warp scheduling.** This approach involves breaking up blocks into individual batches of theads that can be executed together.
-
-Multiple warps can be executed on a single core simultaneously by executing instructions from one warp while another warp is waiting. This is similar to pipelining, but dealing with instructions from different threads.
 
 ### Branch Divergence
 
