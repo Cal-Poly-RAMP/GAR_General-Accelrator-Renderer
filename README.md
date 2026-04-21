@@ -24,11 +24,11 @@ Built with <15 files of fully documented Verilog, complete documentation on arch
 
 # Overview
 
-This project is built on top of the [tiny-gpu](https://github.com/adam-maj/tiny-gpu) by adam maj, it is important to go through his read me to understand the fondation of our project.
+This project is built on top of the [tiny-gpu](https://github.com/adam-maj/tiny-gpu) by adam maj, it is important to go through his read me to understand the foundation of our project.
 
-The goal of this project is to help introduce cal poly CARP student to GPU architecture with getting hands on expence with building, designing and verification on a GPU.
+The goal of this project is to help introduce Cal Poly CARP student to GPU architecture with getting hands on experience with building, designing and verification on a GPU.
 
-Our current project is expanding the ISA to acomidate RISC-V and to be able to take advantage of the compiler built by the [vortex](https://vortex.cc.gatech.edu/) team at georgia tech.
+Our current project is expanding the ISA to accomodate RISC-V and to be able to take advantage of the compiler built by the [vortex](https://vortex.cc.gatech.edu/) team at georgia tech.
 
 ## Whats New in GAR?
 
@@ -41,7 +41,7 @@ Our current project is expanding the ISA to acomidate RISC-V and to be able to t
 
 
 
-1. **Warp schedular** - this adition allows for a paramatraizable warp size that is composed from the thread block that is scheduled onto the compute core, but also has warps scheduled in a round robin fasion
+1. **Warp scheduler** - this addition allows for a parameterizable warp size that is composed from the thread block that is scheduled onto the compute core, but also has warps scheduled in a round robin fasion
   a
 
 # Architecture
@@ -99,7 +99,7 @@ None
 
 ### Decoder
 
-Changed to properly decode the RISC-V isa 
+Changed to properly decode the RISC-V ISA 
 
 ### Register Files
 
@@ -107,11 +107,11 @@ None
 
 ### ALUs
 
-Needs to be expanded to compute a larger set of the RISC-V isa
+Needs to be expanded to compute a larger set of the RISC-V ISA
 
 ### LSUs
 
-Expand the ISA it incorrpetate the more complete RISC-V isa
+Expand the ISA so it can incorporate the more complete RISC-V ISA
 
 ### PCs
 
