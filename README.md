@@ -1,8 +1,6 @@
-# tiny-gpu
+# General Accelrator Renderer(GAR)
 
-A minimal GPU implementation in Verilog optimized for learning about how GPUs work from the ground up.
-
-Built with <15 files of fully documented Verilog, complete documentation on architecture & ISA, working matrix addition/multiplication kernels, and full support for kernel simulation & execution traces.
+A minimal RISC-V GPU implementation in Verilog built by cal poly CARP on top of the tiny-gpu architecture
 
 ### Table of Contents
 
@@ -37,8 +35,6 @@ Our current project is expanding the ISA to acomidate RISC-V and to be able to t
 > **Current GAR expantions** 
 > Make sure to read and understand the orginal tiny-gpu before starting to got throught the GAR core because every thing we do is going to build off that 
 > 
-, 
-
 
 
 1. **Warp schedular** - this adition allows for a paramatraizable warp size that is composed from the thread block that is scheduled onto the compute core, but also has warps scheduled in a round robin fasion
