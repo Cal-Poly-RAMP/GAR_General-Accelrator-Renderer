@@ -59,6 +59,9 @@ module warp_scheduler #(
     reg [WARPS_PER_CORE:0] start_warp;
     wire [7:0] total_warps;
 
+    //Thread Meta Data
+    reg [7:0] thread_pcs[THREADS_PER_BLOCK-1:0];
+
     localparam 
         READY = 2'b00, // Ready to be swaped to
         STALL = 2'b01,       // Warp is currently Stalled
