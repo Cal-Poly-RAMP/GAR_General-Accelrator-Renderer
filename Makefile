@@ -8,25 +8,24 @@ export LIBPYTHON_LOC=$(shell cocotb-config --libpython)
 # - make show_matadd
 
 VERILATOR_ARGS = "--cc --exe --build --trace -Isrc -Wno-WIDTHEXPAND -Wno-ASCRANGE -Wno-WIDTHTRUNC -Wno-CASEINCOMPLETE -Wno-UNSIGNED  -Wno-MULTIDRIVEN --compiler gcc -O3 -CFLAGS "-O3""
-VERILOG_SOURCES = "$(shell find src -name '*.sv')"
-VERILOG_HEADER = "$(shell find src -name '*.svh')"
+VERILOG_SOURCES = $(shell find src -name '*.sv')
+VERILOG_HEADER = $(shell find src -name '*.svh')
 clean: 
 	rm -rf build/*
 	rm -rf sim_build/*
 
 #SIM ?= icarus
-SIM ?= verilator
+SIM ?= icarus
 TOPLEVEL = gpu
 BUILD_DIR = build
 TOP_V = $(BUILD_DIR)/gpu.v
 
 test_%: MODULE = test.test_$*
-test_%: 
+test_%: $(TOP_V)
 ifeq ($(SIM),icarus)
 	iverilog -o $(BUILD_DIR)/sim.vvp -s $(TOPLEVEL) -g2012 $(TOP_V)
-	MODULE=$(MODULE) vvp -M $(shell cocotb-config --prefix)/cocotb/libs -m libcocotbvpi_icarus $(BUILD_DIR)/sim.vvp
+	MODULE=$(MODULE) vvp $(EXTRA_VVP_ARGS) $(BUILD_DIR)/sim.vvp
 else ifeq ($(SIM),verilator)
-	
 	MODULE=$(MODULE) \
 	TOPLEVEL=$(TOPLEVEL) \
 	VERILOG_SOURCES=$(VERILOG_SOURCES) \

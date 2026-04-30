@@ -2,7 +2,7 @@ import cocotb
 from .helpers.testbench_bin import load_json_binary, setup_wrap
 
 
-@cocotb.test
+@cocotb.test()
 async def test_matadd_8_threads(dut):
     test_conf = load_json_binary(
         "./tiny-gpu-assembler/asm_build/test_matadd_8_threads.json")
@@ -12,7 +12,7 @@ async def test_matadd_8_threads(dut):
     verify_matadd(test_conf, data_memory)
 
 
-@cocotb.test
+@cocotb.test()
 async def test_matadd_32_threads(dut):
     test_conf = load_json_binary(
         "./tiny-gpu-assembler/asm_build/test_matadd_32_threads.json")
