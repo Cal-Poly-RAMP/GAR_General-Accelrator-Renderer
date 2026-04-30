@@ -24,7 +24,7 @@ test_%: MODULE = test.test_$*
 test_%: $(TOP_V)
 ifeq ($(SIM),icarus)
 	iverilog -o $(BUILD_DIR)/sim.vvp -s $(TOPLEVEL) -g2012 $(TOP_V)
-	MODULE=$(MODULE) vvp $(EXTRA_VVP_ARGS) $(BUILD_DIR)/sim.vvp
+	MODULE=$(MODULE) vvp -M $(shell cocotb-config --lib-dir) -m libcocotbvpi_icarus $(EXTRA_VVP_ARGS) $(BUILD_DIR)/sim.vvp
 else ifeq ($(SIM),verilator)
 	MODULE=$(MODULE) \
 	TOPLEVEL=$(TOPLEVEL) \

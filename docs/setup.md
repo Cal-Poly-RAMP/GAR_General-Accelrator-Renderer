@@ -64,7 +64,7 @@ Should expect:
 ```
 
 ## Enter Project Directory
-Enter GAR directory and create build file:
+Enter GAR directory and create build directory:
 ```
 cd ~/GAR_General-Accelerator-Renderer
 mkdir -p build
@@ -78,12 +78,20 @@ export COCOTB_LIB_DIR="$(cocotb-config --lib-dir)"
 
 ## Make Python Test Folders Importable
 
-If it doesn't exists, add:
+If it does not exist, add:
 ```
 touch test/__init__.py
 ```
 
 (Or through VS Code, just create a \_\_init__.py file inside the tests folder)
+
+## Create Assembler Build and Log Folder
+If it does not exist, add:
+
+```
+mkdir -p tiny-gpu-assembler/asm_build
+mkdir -p test/logs
+```
 
 ## Generate Assembler JSON files
 Note: This step will be outdated once RISC-V ISA implemented. 
@@ -97,3 +105,10 @@ ls tiny-gpu-assembler/asm_build/
 ```
 
 ## Run CocoTB Tests With Icarus
+Run any of the CocoTB tests. 
+
+```
+make test_matadd
+```
+
+Note: At the current project state, cocotb may launch successfully and discover tests, but the tests may still fail due to RTL/testbench signal-width mismatches. This is expected while GAR is still being migrated from base TinyGPU toward the new architecture.
