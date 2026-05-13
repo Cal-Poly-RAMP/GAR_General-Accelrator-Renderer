@@ -59,7 +59,7 @@ module  divergence_stack #(
             //current_divergence_mask <= 0;
         end
         else if (enable) begin
-            if (divergence_event && core_state == 3'b110) begin
+            if (divergence_event && core_state == 3'b000) begin
                 // Push the current active mask onto the stack
                 divergence_stack[stack_pointer] <= warp_next_mask;
                 head_stack[stack_pointer] <= head_next;

@@ -46,7 +46,7 @@ module warp_scheduler #(
     input reg [$clog2(WARPS_PER_CORE):0]warp_index,
     output wire [3:0] warp_ids [THREADS_PER_BLOCK-1:0],
     output wire [$clog2(THREADS_PER_BLOCK):0] warp_groups[0:WARPS_PER_CORE-1][0:THREADS_PER_WARP-1],
-    output reg [THREADS_PER_WARP-1:0] masks [WARPS_PER_CORE-1:0],
+    output reg [THREADS_PER_BLOCK-1:0] masks,
 
     // Current & Next PC
     output reg [7:0] current_pc,
@@ -60,7 +60,7 @@ module warp_scheduler #(
     //warp meta data
     reg [7:0] warps_states [WARPS_PER_CORE-1:0];
     reg [1:0] warp_status [WARPS_PER_CORE-1:0];
-    reg [WARPS_PER_CORE-1:0] warps_ready;
+    // reg [WARPS_PER_CORE-1:0] warps_ready;
     reg [7:0] warp_pcs[WARPS_PER_CORE-1:0];
     reg [$clog2(WARPS_PER_CORE):0] next_warp;
     reg [WARPS_PER_CORE:0] start_warp;
@@ -70,9 +70,8 @@ module warp_scheduler #(
     reg [7:0] thread_pcs[THREADS_PER_BLOCK-1:0];
 
     // Warp Count
-    reg warp_count;
     reg [THREADS_PER_WARP-1:0] head;    
-    reg empty;
+    reg [WARPS_PER_CORE-1:0] empty;
     
     localparam 
         READY = 2'b00, // Ready to be swaped to
@@ -125,7 +124,7 @@ module warp_scheduler #(
                 warp_pcs[i] <= 7'b0;
                 warps_states[i] <= FETCH;
                 warp_status[i] <= READY;
-                warps_ready[i] <= 1;
+                // warps_ready[i] <= 1;
             end
             next_warp <= 0;
             core_state <= IDLE;
@@ -172,7 +171,7 @@ module warp_scheduler #(
                         current_pc <=warp_pcs[next_warp];
                         core_state <= warps_states[next_warp];
                         warp_status[next_warp] <= STALL;
-                        warps_ready[next_warp] <= 0;
+                        // warps_ready[next_warp] <= 0;
                         next_warp <= (next_warp == total_warps-1) ? 0 : next_warp+1;
                     end
                 end
@@ -233,18 +232,18 @@ module warp_scheduler #(
                     if (decoded_ret) begin 
                         // If we reach a RET instruction, this block is done executing
                         warps_states[warp] <= DONE;
-                        warps_ready[warp] <= 0;
-                    end else if (rejoin_event && !empty) begin 
+                        // warps_ready[warp] <= 0;
+                    end else if ((empty[warp]) || divergence_event) begin 
                         warp_status[warp] <= READY;
-                        warp_pcs[warp] <= rejoin_event_pc;
-                        warps_ready[warp] <= 1;
+                        warp_pcs[warp] <= current_pc + 1;
+                        // warps_ready[warp] <= 1;
                         warps_states[warp] <= FETCH;
                     end
                     else begin
                         // TODO: Branch divergence. For now assume all next_pc converge
                         warp_status[warp] <= READY;
                         warp_pcs[warp] <= next_pc[head];
-                        warps_ready[warp] <= 1;
+                        // warps_ready[warp] <= 1;
                         warps_states[warp] <= FETCH;
                     end
                     //warps_ready <= (warps_ready << next_warp) | (warps_ready >> (WARPS_PER_CORE-next_warp));       //rsl

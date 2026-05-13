@@ -39,8 +39,8 @@ module warp_manager #(
     input reg [DATA_MEM_DATA_BITS-1:0] decoded_immediate,
     output reg [7:0] rejoin_event_pc, // The PC to rejoin to on a JOINER instruction after divergence
 
-    output reg empty,
-    output reg [THREADS_PER_WARP-1:0] masks [WARPS_PER_CORE-1:0],
+    output reg [WARPS_PER_CORE-1:0] empty,
+    output reg [THREADS_PER_BLOCK-1:0] masks,
     output reg [THREADS_PER_WARP-1:0] head,
     output reg [3:0] warp_ids [THREADS_PER_BLOCK-1:0],
     output reg [$clog2(THREADS_PER_BLOCK):0] warp_groups[0:WARPS_PER_CORE-1][0:THREADS_PER_WARP-1],
@@ -85,7 +85,7 @@ module warp_manager #(
                 .rejoining_threads_mask(rejoining_threads_mask),
                 .rejoining_head(rejoin_event_head),
                 .rejoining_pc(rejoin_event_pc),
-                .empty(empty)
+                .empty(empty[i])
             );
         end
     endgenerate
@@ -98,8 +98,8 @@ module warp_manager #(
             head <= 0;
             head_next <= 0;
             warp_next_mask <= {THREADS_PER_WARP{1'b0}};
+            masks <={THREADS_PER_BLOCK{1'b1}};
             for (int i = 0; i < WARPS_PER_CORE; i++) begin
-                masks[i] <= 4'b1111;
                 done_warps[i] <= 0;
             end
             for (int i = 1; i < THREADS_PER_BLOCK; i++) begin
@@ -142,14 +142,14 @@ module warp_manager #(
                 // You would need to determine which threads are diverging and update the masks accordingly
                 warp_next_mask <= {THREADS_PER_WARP{1'b0}};
                 //current_mask <= masks[warp_ids[warp]];
-                for (int i =1; i < THREADS_PER_WARP; i++) begin
+                for (int i =0; i < THREADS_PER_WARP; i++) begin
                     if (next_pcs[i] == decoded_immediate) begin
                         head_next <= i;
                         warp_next_mask[i] <= 1; // Update the next mask for the diverging thread
-                        masks[warp][i] <= 0; // Disable the diverging thread in the mask
+                        masks[warp_groups[warp][i]] <= 0; // Disable the diverging thread in the mask
                     end
                     else begin
-                        if (masks[warp][i] == 1) // Keep the other threads' mask values the same
+                        if (masks[warp_groups[warp][i]] == 1) // Keep the other threads' mask values the same
                         begin
                             head <= i;
                         end
@@ -161,8 +161,10 @@ module warp_manager #(
                 // This is a placeholder for the actual logic to handle rejoin
                 // You would need to determine which threads are rejoining and update the masks accordingly
                 // Pop the divergence stack to get the previous mask and update accordingly
-
-                masks[warp] <= rejoining_threads_mask; // Update the mask for the rejoining thread
+                for (int i = 0; i < THREADS_PER_WARP; i++) begin
+                    masks[warp_groups[warp][i]] <= rejoining_threads_mask[i]; // Re-enable the rejoining threads in the mask
+                end
+                 // Update the mask for the rejoining thread
                 head <= rejoin_event_head;
             end
         

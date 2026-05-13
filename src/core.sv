@@ -47,10 +47,11 @@ module core #(
     reg [15:0] instruction;
 
     //warp signals
+
     reg [$clog2(WARPS_PER_CORE):0]warp_index;
     wire [3:0] warp_ids [THREADS_PER_BLOCK-1:0];
     wire [$clog2(THREADS_PER_BLOCK):0] warp_groups[0:WARPS_PER_CORE-1][0:THREADS_PER_WARP-1];
-    reg [THREADS_PER_WARP-1:0] masks [WARPS_PER_CORE-1:0];
+    reg [THREADS_PER_BLOCK-1:0] masks;
     reg[3:0] warp;
     wire [$clog2(THREADS_PER_BLOCK):0] Running_Threads [0:THREADS_PER_WARP-1]; 
     
@@ -198,7 +199,7 @@ module core #(
             alu alu_instance (
             .clk(clk),
             .reset(reset),
-            .enable(masks[warp][i] == 1),
+            .enable(masks[Running_Threads[i]] == 1),
             .core_state(core_state),
             .decoded_alu_arithmetic_mux(decoded_alu_arithmetic_mux),
             .decoded_alu_output_mux(decoded_alu_output_mux),
@@ -211,7 +212,7 @@ module core #(
         lsu lsu_instance (
             .clk(clk),
             .reset(reset),
-            .enable(masks[warp][i] == 1),
+            .enable(masks[Running_Threads[i]] == 1),
             .core_state(core_state),
             .decoded_mem_read_enable(decoded_mem_read_enable),
             .decoded_mem_write_enable(decoded_mem_write_enable),
@@ -237,7 +238,7 @@ module core #(
         ) pc_instance (
             .clk(clk),
             .reset(reset),
-            .enable(masks[warp][i] == 1),
+            .enable(masks[Running_Threads[i]] == 1),
             .core_state(core_state),
             .decoded_nzp(decoded_nzp),
             .decoded_immediate(decoded_immediate),
@@ -260,7 +261,7 @@ module core #(
             ) register_instance (
                 .clk(clk),
                 .reset(reset),
-                .enable(u < thread_count ), // Only enable registers for active threads in the block
+                .enable(u < thread_count && warp_ids[u] == warp && masks[u] == 1), // Only enable registers for active threads in the block
                 .block_id(block_id),
                 .core_state(core_state),
                 .decoded_reg_write_enable(decoded_reg_write_enable),
