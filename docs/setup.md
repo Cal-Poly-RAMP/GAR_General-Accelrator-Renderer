@@ -50,7 +50,10 @@ source ~/gar-env/bin/activate
 ## Install CocoTB 1.9.2
 Inside the activated virtual environment:
 ```
-pip install cocotb==1.9.2
+sudo apt install pipx
+pipx install cocotb==1.9.2
+pipx ensurepath
+source ~/.bashrc
 ```
 
 Verify Installation:
@@ -61,6 +64,11 @@ cocotb-config --version
 Should expect:
 ```
 1.9.2
+```
+
+##Clone GAR ripository
+```
+git clone https://github.com/Cal-Poly-RAMP/GAR_General-Accelrator-Renderer.git
 ```
 
 ## Enter Project Directory
