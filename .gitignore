@@ -3,6 +3,8 @@ build/
 test/logs/*
 !.gitkeep
 gds/**/*.gltf
+sim_build/
+dump.vcd
 
 .DS_Store
 results.xml
